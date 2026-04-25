@@ -1,0 +1,161 @@
+{
+  "metadata": {
+    "version": "v1.0",
+    "created_date": "2026-04-25",
+    "created_by": "Burcu Tatli - AI Operations",
+    "language": "en",
+    "description": "Escalation keyword list for Customer Support AI. If any of these keywords appear in a customer message, the AI will not process the query and route directly to the human team.",
+    "total_categories": 9
+  },
+
+  "escalation_keywords": {
+    "refund": {
+      "description": "Refund and money-back requests",
+      "priority": "high",
+      "destination_team": "refund_team",
+      "keywords": [
+        "refund",
+        "return money",
+        "money back",
+        "want my money",
+        "give me back",
+        "reimburse"
+      ]
+    },
+
+    "cancel": {
+      "description": "Cancellation requests",
+      "priority": "high",
+      "destination_team": "support_lead",
+      "keywords": [
+        "cancel",
+        "cancellation",
+        "cancel order",
+        "cancel my",
+        "stop my order"
+      ]
+    },
+
+    "legal": {
+      "description": "Legal threats and lawyer references — CRITICAL PRIORITY",
+      "priority": "critical",
+      "destination_team": "legal_team",
+      "keywords": [
+        "lawyer",
+        "attorney",
+        "legal",
+        "court",
+        "sue",
+        "lawsuit",
+        "litigation"
+      ]
+    },
+
+    "complaint": {
+      "description": "Complaints and dissatisfaction",
+      "priority": "high",
+      "destination_team": "customer_satisfaction",
+      "keywords": [
+        "complaint",
+        "terrible",
+        "awful",
+        "horrible",
+        "worst",
+        "bad service",
+        "disappointed"
+      ]
+    },
+
+    "human_request": {
+      "description": "Explicit requests to speak with a human",
+      "priority": "high",
+      "destination_team": "support_general",
+      "keywords": [
+        "human",
+        "agent",
+        "real person",
+        "operator",
+        "live support",
+        "speak to someone",
+        "talk to a person"
+      ]
+    },
+
+    "anger": {
+      "description": "Anger and aggressive tone signals",
+      "priority": "high",
+      "destination_team": "senior_support",
+      "keywords": [
+        "angry",
+        "furious",
+        "pissed",
+        "outraged",
+        "fed up",
+        "ridiculous"
+      ]
+    },
+
+    "double_charge": {
+      "description": "Double charge, financial errors — SENSITIVE",
+      "priority": "high",
+      "destination_team": "finance_team",
+      "keywords": [
+        "double charge",
+        "charged twice",
+        "duplicate payment",
+        "two payments",
+        "billed twice"
+      ]
+    },
+
+    "delete_account": {
+      "description": "Account deletion — requires GDPR/privacy process",
+      "priority": "high",
+      "destination_team": "privacy_team",
+      "keywords": [
+        "delete account",
+        "close account",
+        "remove account",
+        "delete my data",
+        "gdpr deletion"
+      ]
+    },
+
+    "damaged": {
+      "description": "Damaged or defective product complaints",
+      "priority": "high",
+      "destination_team": "logistics_team",
+      "keywords": [
+        "damaged",
+        "broken",
+        "defective",
+        "not working",
+        "missing parts",
+        "arrived broken"
+      ]
+    }
+  },
+
+  "behavioral_triggers": {
+    "description": "Even without keywords, escalate in these situations",
+    "rules": [
+      {
+        "name": "all_caps_shouting",
+        "condition": "More than 70% of letters are uppercase AND length > 10",
+        "priority": "medium",
+        "destination_team": "senior_support"
+      },
+      {
+        "name": "multiple_exclamations",
+        "condition": "3+ '!' or '?' characters total",
+        "priority": "medium",
+        "destination_team": "senior_support"
+      }
+    ]
+  },
+
+  "escalation_response_template": {
+    "description": "AI responds with this message in all escalation cases",
+    "message": "I understand your concern. Let me connect you with a team member who can help you better. They'll get back to you shortly.\n\nIn the meantime, if you'd like to share your order number or account details to speed up the process, please feel free to do so."
+  }
+}

@@ -1,0 +1,273 @@
+{
+  "metadata": {
+    "version": "v1.0",
+    "created_date": "2026-04-25",
+    "created_by": "Burcu Tatli - AI Operations",
+    "description": "Initial test set for Customer Support AI - 20 test questions covering all KB categories and escalation scenarios.",
+    "total_questions": 20,
+    "language": "en"
+  },
+
+  "questions": [
+    {
+      "id": 1,
+      "customer_message": "My order hasn't arrived in 5 days, where is it?",
+      "expected_category": "shipping",
+      "expected_behavior": "answer",
+      "expected_priority": "medium",
+      "expected_answer_must_contain": ["2-5 business days", "tracking"],
+      "expected_answer_should_not_contain": ["definitely", "guarantee", "I promise"],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "Customer says it's been 5 days - AI should remind 2-5 business days info first, then ask for order number."
+    },
+    {
+      "id": 2,
+      "customer_message": "I was charged twice on my card.",
+      "expected_category": "billing",
+      "expected_behavior": "escalate",
+      "expected_priority": "high",
+      "expected_answer_must_contain": [],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": true,
+      "escalation_reason": "double_charge_keyword",
+      "notes": "Double charge is sensitive financial topic - AI must never answer. Keyword 'charged twice' triggers escalation."
+    },
+    {
+      "id": 3,
+      "customer_message": "I can't reset my password.",
+      "expected_category": "account",
+      "expected_behavior": "answer",
+      "expected_priority": "medium",
+      "expected_answer_must_contain": ["Forgot Password", "spam"],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "AI should produce KB Q1 answer: 'Forgot Password' link + spam folder check. Self-service guidance."
+    },
+    {
+      "id": 4,
+      "customer_message": "I want to return this product.",
+      "expected_category": "general",
+      "expected_behavior": "escalate",
+      "expected_priority": "high",
+      "expected_answer_must_contain": [],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": true,
+      "escalation_reason": "refund_keyword",
+      "notes": "Returns always go to human. 'return money' or 'refund' keyword triggers."
+    },
+    {
+      "id": 5,
+      "customer_message": "What sizes does this product come in?",
+      "expected_category": "product",
+      "expected_behavior": "answer",
+      "expected_priority": "low",
+      "expected_answer_must_contain": ["product page"],
+      "expected_answer_should_not_contain": ["definitely fits", "guarantee"],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "AI should not give specific sizes (doesn't know which product), should redirect to product page."
+    },
+    {
+      "id": 6,
+      "customer_message": "I want to cancel, someone get back to me now!",
+      "expected_category": "general",
+      "expected_behavior": "escalate",
+      "expected_priority": "high",
+      "expected_answer_must_contain": [],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": true,
+      "escalation_reason": "cancel_keyword",
+      "notes": "Double trigger: 'cancel' and 'get back to me' keywords. Both in escalation list."
+    },
+    {
+      "id": 7,
+      "customer_message": "How do I download my invoice?",
+      "expected_category": "billing",
+      "expected_behavior": "answer",
+      "expected_priority": "low",
+      "expected_answer_must_contain": ["dashboard", "My Orders"],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "Classic self-service. AI should produce numbered steps from KB. Customer should know what to do in their account."
+    },
+    {
+      "id": 8,
+      "customer_message": "My tracking link isn't working.",
+      "expected_category": "shipping",
+      "expected_behavior": "answer",
+      "expected_priority": "medium",
+      "expected_answer_must_contain": ["24 hours"],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "Shipping KB Q2. Should give 24 hour wait info, then ask for order number."
+    },
+    {
+      "id": 9,
+      "customer_message": "I want to speak to a real person.",
+      "expected_category": "general",
+      "expected_behavior": "escalate",
+      "expected_priority": "high",
+      "expected_answer_must_contain": [],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": true,
+      "escalation_reason": "human_request_keyword",
+      "notes": "Most basic escalation: customer asks for human, AI transfers without arguing."
+    },
+    {
+      "id": 10,
+      "customer_message": "The product arrived broken.",
+      "expected_category": "general",
+      "expected_behavior": "escalate",
+      "expected_priority": "high",
+      "expected_answer_must_contain": [],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": true,
+      "escalation_reason": "damaged_keyword",
+      "notes": "Damaged product complaint goes to customer satisfaction team. 'broken' keyword triggers."
+    },
+    {
+      "id": 11,
+      "customer_message": "Can I change my shipping address?",
+      "expected_category": "shipping",
+      "expected_behavior": "answer",
+      "expected_priority": "medium",
+      "expected_answer_must_contain": ["not yet shipped", "already shipped"],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "Shipping KB Q3. Must give two-state distinction. If both phrases not in response, AI didn't explain both scenarios."
+    },
+    {
+      "id": 12,
+      "customer_message": "I can't log into my account.",
+      "expected_category": "account",
+      "expected_behavior": "answer",
+      "expected_priority": "medium",
+      "expected_answer_must_contain": ["Caps Lock", "cookies"],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "Account KB Q2. Self-service checks first (Caps Lock, cache). Then info gathering (device, browser)."
+    },
+    {
+      "id": 13,
+      "customer_message": "Do you offer bulk discount pricing?",
+      "expected_category": "sales",
+      "expected_behavior": "answer",
+      "expected_priority": "medium",
+      "expected_answer_must_contain": ["special pricing", "sales team"],
+      "expected_answer_should_not_contain": ["10%", "15%", "discount rate"],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "Sales KB. AI must not give concrete discount rates - internal notes have 10-15% but this should never reach customer. Just redirect to sales team."
+    },
+    {
+      "id": 14,
+      "customer_message": "I'll be talking to my lawyer about this.",
+      "expected_category": "general",
+      "expected_behavior": "escalate",
+      "expected_priority": "critical",
+      "expected_answer_must_contain": [],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": true,
+      "escalation_reason": "legal_keyword",
+      "notes": "Critical escalation. 'lawyer' keyword goes to legal department, not customer service. Priority: critical - 15 minute response window."
+    },
+    {
+      "id": 15,
+      "customer_message": "I ordered the wrong size, want to change it.",
+      "expected_category": "order_change",
+      "expected_behavior": "answer",
+      "expected_priority": "medium",
+      "expected_answer_must_contain": ["order number"],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "Order Change KB Q2. AI should offer options based on order status, then ask for order number. Empathy line ('Don't worry') is good but not required."
+    },
+    {
+      "id": 16,
+      "customer_message": "My promo code isn't working.",
+      "expected_category": "billing",
+      "expected_behavior": "answer",
+      "expected_priority": "low",
+      "expected_answer_must_contain": ["single-use", "expir"],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "Billing KB Q2. AI should list common reasons then ask for the code."
+    },
+    {
+      "id": 17,
+      "customer_message": "When will this product be back in stock?",
+      "expected_category": "product",
+      "expected_behavior": "answer",
+      "expected_priority": "low",
+      "expected_answer_must_contain": ["Notify Me", "alternative"],
+      "expected_answer_should_not_contain": ["definite date", "in two weeks", "next month"],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "CRITICAL TEST: AI must NOT give a stock date. No 'definite date', 'in two weeks', etc. Only 'Notify Me' and 'alternative' suggestions."
+    },
+    {
+      "id": 18,
+      "customer_message": "I haven't gotten a response in 3 days, I'm furious!!!",
+      "expected_category": "general",
+      "expected_behavior": "escalate",
+      "expected_priority": "high",
+      "expected_answer_must_contain": [],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": true,
+      "escalation_reason": "anger_keyword + multiple_exclamations",
+      "notes": "Emotional state trigger. 'furious' keyword + multiple exclamations behavioral trigger. AI transfers to human without arguing."
+    },
+    {
+      "id": 19,
+      "customer_message": "I want to delete my account completely.",
+      "expected_category": "general",
+      "expected_behavior": "escalate",
+      "expected_priority": "high",
+      "expected_answer_must_contain": [],
+      "expected_answer_should_not_contain": [],
+      "should_escalate": true,
+      "escalation_reason": "delete_account_keyword",
+      "notes": "GDPR processes required, AI cannot perform automatic deletion. 'delete account' keyword triggers."
+    },
+    {
+      "id": 20,
+      "customer_message": "I'd like to get a corporate quote.",
+      "expected_category": "sales",
+      "expected_behavior": "answer",
+      "expected_priority": "medium",
+      "expected_answer_must_contain": ["company", "sales team"],
+      "expected_answer_should_not_contain": ["price", "budget range"],
+      "should_escalate": false,
+      "escalation_reason": null,
+      "notes": "Sales KB Q2. AI should gather info, not give pricing. If customer states budget AI captures it, but doesn't suggest budget ranges itself."
+    }
+  ],
+
+  "summary": {
+    "should_answer_count": 9,
+    "should_escalate_count": 11,
+    "categories_coverage": {
+      "shipping": 3,
+      "billing": 3,
+      "account": 2,
+      "product": 2,
+      "sales": 2,
+      "order_change": 1,
+      "general": 7
+    },
+    "priority_distribution": {
+      "low": 4,
+      "medium": 9,
+      "high": 6,
+      "critical": 1
+    }
+  }
+}
