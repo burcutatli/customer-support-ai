@@ -10,6 +10,7 @@ Last updated: 2026-04-25
 """
 
 import logging
+import math
 import re
 from pathlib import Path
 from anthropic import Anthropic, APIError
@@ -171,7 +172,7 @@ class RAGPipeline:
         # Confidence = best chunk's similarity (Chroma returns distance,
         # convert to similarity)
         best_distance = retrieved["distances"][0] if retrieved["distances"] else 1.0
-        confidence = max(0.0, 1.0 - best_distance)
+        confidence = math.exp(-best_distance)
         
         return {
             "answer": answer,
@@ -180,7 +181,7 @@ class RAGPipeline:
                 {
                     "source": meta["source_file"],
                     "section": meta["section"],
-                    "similarity": 1.0 - dist,
+                    "similarity": math.exp(-dist),
                 }
                 for meta, dist in zip(retrieved["metadatas"], retrieved["distances"])
             ],

@@ -44,7 +44,7 @@ TOP_K_RETRIEVAL: int = 3
 # ============================================================
 
 # Below this threshold, AI escalates to human instead of answering
-MIN_CONFIDENCE_TO_ANSWER: float = 0.50
+MIN_CONFIDENCE_TO_ANSWER: float = 0.30
 
 # ============================================================
 # LOGGING CONFIGURATION
