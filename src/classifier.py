@@ -12,8 +12,10 @@ Last updated: 2026-04-25
 import json
 import logging
 from anthropic import Anthropic, APIError
+from langfuse import observe, get_client
 
 logger = logging.getLogger(__name__)
+_langfuse = get_client()
 
 
 class MessageClassifier:
@@ -45,6 +47,7 @@ class MessageClassifier:
         self.max_tokens = max_tokens
         self.valid_categories = valid_categories
     
+    @observe(as_type="generation", name="classifier")
     def classify(self, message: str) -> dict:
         """
         Classify a customer message into a category.
@@ -65,6 +68,18 @@ class MessageClassifier:
                 system=system_prompt,
                 messages=[{"role": "user", "content": message}],
             )
+            
+            try:
+                _langfuse.update_current_generation(
+                    model=self.model,
+                    input=message,
+                    usage_details={
+                        "input": response.usage.input_tokens,
+                        "output": response.usage.output_tokens,
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Langfuse update failed (non-fatal): {e}")
             
             raw_text = response.content[0].text.strip()
             result = self._parse_response(raw_text)

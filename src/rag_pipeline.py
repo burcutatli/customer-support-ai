@@ -13,6 +13,7 @@ import os
 import re
 from pathlib import Path
 from anthropic import Anthropic, APIError
+from langfuse import observe, get_client
 import chromadb
 from chromadb.utils import embedding_functions
 from config import (
@@ -119,6 +120,7 @@ class RAGPipeline:
             "best_distance": distances[0] if distances else float("inf"),
         }
 
+    @observe(as_type="generation", name="rag_generator")
     def generate_answer(self, query: str, retrieved_chunks: list[dict]) -> str:
         context = "\n\n---\n\n".join(
             [f"[Source: {c['source']}]\n{c['text']}" for c in retrieved_chunks]
@@ -136,6 +138,19 @@ Based on the context above, write a friendly, helpful response to the customer."
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_message}],
             )
+            try:
+                _lf = get_client()
+                _lf.update_current_generation(
+                    model=GENERATION_MODEL,
+                    input=user_message,
+                    usage_details={
+                        "input": response.usage.input_tokens,
+                        "output": response.usage.output_tokens,
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Langfuse update failed (non-fatal): {e}")
+            
             return response.content[0].text
         except APIError as e:
             logger.error(f"Anthropic API error: {e}")
