@@ -37,6 +37,7 @@ from config import (
 from escalation_filter import EscalationFilter
 from classifier import MessageClassifier
 from rag_pipeline import RAGPipeline
+from pii_masker import PIIMasker, MaskingResult
 
 
 # ============================================================
@@ -54,6 +55,7 @@ ESCALATION_RESPONSE_TEMPLATE = (
 _escalation_filter: EscalationFilter | None = None
 _classifier: MessageClassifier | None = None
 _rag_pipeline: RAGPipeline | None = None
+_pii_masker: PIIMasker | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +114,11 @@ def setup_pipeline() -> None:
     _rag_pipeline = RAGPipeline()
     logger.info("RAGPipeline initialized")
     
+    # Initialize PII masker (Microsoft Presidio)
+    global _pii_masker
+    _pii_masker = PIIMasker()
+    logger.info("PIIMasker initialized")
+    
     logger.info("Pipeline setup complete")
 
 
@@ -141,13 +148,20 @@ def process_message(message: str) -> dict:
         - reason: reason for escalation (if applicable)
         - metadata: detailed pipeline info for logging
     """
-    if _escalation_filter is None or _classifier is None or _rag_pipeline is None:
+    if _escalation_filter is None or _classifier is None or _rag_pipeline is None or _pii_masker is None:
         raise RuntimeError("Pipeline not initialized. Call setup_pipeline() first.")
     
     logger.info(f"Processing message: {message[:80]}...")
     
+    # --- Step 0: PII masking ---
+    masking_result = _pii_masker.mask(message)
+    masked_message = masking_result.masked_text
+    pii_mapping = masking_result.mapping
+    if pii_mapping:
+        logger.info(f"PII masked: {len(pii_mapping)} entity(ies) replaced")
+    
     # --- Step 1: Escalation keyword filter ---
-    should_escalate, reason, team = _escalation_filter.check(message)
+    should_escalate, reason, team = _escalation_filter.check(masked_message)
     if should_escalate:
         logger.info(f"Escalating via filter: {reason} → {team}")
         return {
@@ -159,7 +173,7 @@ def process_message(message: str) -> dict:
         }
     
     # --- Step 2: Classify message ---
-    classification = _classifier.classify(message)
+    classification = _classifier.classify(masked_message)
     logger.info(
         f"Classification: {classification['category']} "
         f"(confidence: {classification['confidence']:.2f})"
@@ -180,7 +194,7 @@ def process_message(message: str) -> dict:
         }
     
     # --- Step 4: RAG generation ---
-    rag_result = _rag_pipeline.answer_query(message)
+    rag_result = _rag_pipeline.answer_query(masked_message)
     logger.info(f"RAG generated answer (confidence: {rag_result['confidence']:.2f})")
     
     # --- Step 5: Confidence check on RAG ---
@@ -198,11 +212,12 @@ def process_message(message: str) -> dict:
             },
         }
     
-    # --- Step 6: Return successful answer ---
+    # --- Step 6: Return successful answer (with PII restored) ---
+    final_response = _pii_masker.unmask(rag_result["answer"], pii_mapping)
     return {
         "action": "answer",
         "category": classification["category"],
-        "response_to_customer": rag_result["answer"],
+        "response_to_customer": final_response,
         "metadata": {
             "stage": "answered",
             "classification": classification,
