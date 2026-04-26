@@ -1,139 +1,121 @@
 # Customer Support AI
 
-A multi-layered customer support automation system with **defensive escalation routing**, built for an e-commerce scenario.
+Production-grade customer support automation with **defense-in-depth** safety architecture, full observability, and HIPAA-aligned PII handling.
 
-The system processes customer messages through three sequential safety layers — keyword filtering, AI classification with confidence thresholds, and RAG-based answer generation — before responding to the customer or routing to a human team.
+> **Live demo:** https://customer-support-ai-production-0259.up.railway.app/docs
+> **Try it:** `POST /api/process` with `{"message": "When will my order arrive?"}`
 
-## Why this architecture
-
-Most customer support chatbots use a single LLM call with a system prompt like *"if you don't know, say so."* That approach has two problems: hallucination on edge cases, and no audit trail when things go wrong.
-
-This system takes a different approach: **defense in depth**.
-
-```
-Customer message
-       ↓
-[Layer 1] Escalation Filter
-   — Keyword scan (refund, legal, double charge, ...)
-   — Behavioral triggers (ALL CAPS, multiple !!!)
-       ↓
-[Layer 2] Haiku Classifier
-   — Categorizes into: shipping / billing / account / product / sales / order_change / general
-   — Returns confidence score (0.0–1.0)
-   — Below threshold → escalate
-       ↓
-[Layer 3] RAG Pipeline
-   — Retrieves top-k relevant chunks from KB
-   — Sonnet generates answer using ONLY retrieved context
-   — Source attribution + confidence tracking
-       ↓
-Customer receives answer (or escalation message)
-```
-
-Each layer can independently route to human escalation. The customer never receives an unsafe answer.
-
-## What's in the demo
-
-- **6 markdown KB files** covering shipping, billing, account, product, sales, order changes (~2,000 words total)
-- **9 escalation categories** with 50+ trigger keywords
-- **2 behavioral triggers** (all-caps shouting, excessive punctuation)
-- **5 Python modules** with full type hints, docstrings, and error handling
-- **3-tier confidence checking** (filter → classifier → RAG)
-- **Source attribution** in every AI-generated response
-
-## Stack
-
-- **Claude API** — Sonnet 4.5 for response generation, Haiku 4.5 for classification
-- **ChromaDB** — In-memory vector database
-- **Python 3.10+** — Plain SDK calls, no LangChain wrappers (intentional, for clarity)
-
-## Project structure
-
-```
-customer-support-ai/
-├── src/
-│   ├── config.py              # Centralized settings
-│   ├── escalation_filter.py   # Keyword + behavioral filter
-│   ├── classifier.py          # Haiku categorization
-│   ├── rag_pipeline.py        # Vector DB + Sonnet generation
-│   └── main.py                # Orchestrator
-├── config/
-│   └── escalation_keywords.json
-├── knowledge_base/
-│   ├── shipping.md
-│   ├── billing.md
-│   ├── account.md
-│   ├── product.md
-│   ├── sales.md
-│   └── order_change.md
-├── tests/
-│   └── test_questions.json    # 20 evaluation cases
-├── requirements.txt
-└── README.md
-```
-
-## Run it yourself
-
-### In Google Colab (recommended)
-
-1. Clone this repo or upload files to Colab
-2. Install dependencies:
-   ```python
-   !pip install anthropic chromadb
-   ```
-3. Set your Anthropic API key:
-   ```python
-   import os
-   from google.colab import userdata
-   os.environ["ANTHROPIC_API_KEY"] = userdata.get("ANTHROPIC_API_KEY")
-   ```
-4. Run the pipeline:
-   ```python
-   import sys
-   sys.path.insert(0, "src")
-   from main import setup_pipeline, process_message
-   
-   setup_pipeline()
-   result = process_message("When will my order arrive?")
-   print(result)
-   ```
-
-### Locally
-
-```bash
-pip install -r requirements.txt
-export ANTHROPIC_API_KEY="sk-ant-..."
-cd src
-python main.py
-```
-
-## Sample test cases
-
-The `main.py` includes 5 test messages demonstrating each pipeline path:
-
-| Message | Expected Action | Reason |
-|---------|----------------|--------|
-| "When will my order arrive?" | Answer | Shipping query, KB has answer |
-| "I want to refund my order" | Escalate | `refund` keyword triggered |
-| "asdfqwerty xyz blah" | Escalate | Low classification confidence |
-| "How do I download my invoice?" | Answer | Billing query, KB has answer |
-| "I want to speak to a real person" | Escalate | `human_request` keyword triggered |
-
-## What this is not
-
-- Not a production system — no conversation memory, no PII masking, no real-time observability
-- Not multilingual — current setup is English only (multilingual embedding swap is straightforward)
-- Not a LangChain project — intentionally built on raw SDK calls to make the architecture explicit
-
-## What this is
-
-A working proof of concept demonstrating **layered safety architecture** for customer support automation. The patterns here — keyword filtering before AI, confidence thresholds at every stage, source attribution in responses — are production patterns at smaller scale.
-
-Built as a portfolio piece during my transition into AI Operations.
+Multi-layered pipeline that processes customer messages through five sequential safety layers before responding or escalating to a human team. Built as a portfolio piece during my transition into AI Operations.
 
 ---
 
-Built by [Burcu Tatlı](https://www.linkedin.com/in/burcutatli) · AI Operations & Automation  
-Portfolio: [portfolioburcu.netlify.app](https://portfolioburcu.netlify.app)  
-Related work: [clinical-safe-rag](https://github.com/burcutatli/clinical-safe-rag)
+## Architecture
+Every layer is independently observable via Langfuse — input, output, latency, token usage, and **per-call USD cost** are tracked for every customer message.
 
+---
+
+## What's working in production
+
+- ✅ **Public REST API** deployed on Railway (FastAPI + Uvicorn)
+- ✅ **Persistent vector DB** (ChromaDB on disk, Cohere multilingual embeddings)
+- ✅ **PII masking** with Microsoft Presidio (8 entity types, mask → process → unmask)
+- ✅ **Observability** via Langfuse (trace + per-LLM cost tracking)
+- ✅ **Multilingual** (English + Turkish queries via Cohere `embed-multilingual-v3`)
+- ✅ **CI-friendly** (GitHub push → Railway auto-redeploy)
+
+Cost per message in production: **~$0.003** (Sonnet 4.5 ~$0.0026 + Haiku 4.5 ~$0.0004), tracked in real time on Langfuse.
+
+---
+
+## Stack
+
+| Layer | Tool |
+|-------|------|
+| **LLMs** | Anthropic Claude Sonnet 4.5 (RAG), Haiku 4.5 (classifier) |
+| **Embeddings** | Cohere `embed-multilingual-v3` |
+| **Vector DB** | ChromaDB (persistent on disk) |
+| **PII detection** | Microsoft Presidio + spaCy `en_core_web_lg` |
+| **Observability** | Langfuse Cloud (traces, token usage, USD cost) |
+| **API** | FastAPI + Uvicorn |
+| **Deploy** | Railway (Docker via Nixpacks, auto-deploy from GitHub) |
+| **Language** | Python 3.11 |
+
+No LangChain wrappers — intentionally built on raw SDKs to make the architecture explicit and debuggable.
+
+---
+
+## Project structure
+---
+
+## Run locally
+
+```bash
+git clone https://github.com/burcutatli/customer-support-ai.git
+cd customer-support-ai
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python -m spacy download en_core_web_lg
+
+# Required env vars in .env:
+#   ANTHROPIC_API_KEY=sk-ant-...
+#   COHERE_API_KEY=...
+#   LANGFUSE_PUBLIC_KEY=pk-lf-...     (optional, for observability)
+#   LANGFUSE_SECRET_KEY=sk-lf-...     (optional)
+#   LANGFUSE_HOST=https://cloud.langfuse.com  (optional)
+
+cd src
+python api.py
+# → http://localhost:8001/docs
+```
+
+---
+
+## Try the live API
+
+```bash
+curl -X POST https://customer-support-ai-production-0259.up.railway.app/api/process \
+  -H "Content-Type: application/json" \
+  -d '{"message": "When will my order arrive?"}'
+```
+
+Sample paths through the pipeline:
+
+| Message | Action | Why |
+|---------|--------|-----|
+| `When will my order arrive?` | answer | RAG hit on shipping KB (confidence ~0.72) |
+| `Hi, my name is John Smith and my email is john@example.com` | answer | PII masked → LLM never sees real values |
+| `Siparişim ne zaman gelir?` | escalate `low_confidence_rag` | Multilingual embedding works; KB is English-only |
+| `I want to cancel my order` | escalate `cancel_keyword` | Layer 0 keyword trigger |
+| `WHY IS MY ORDER STILL NOT HERE` | escalate `all_caps_shouting` | Behavioral trigger |
+| `What's the weather today?` | escalate `low_confidence_rag` | Out-of-scope |
+
+---
+
+## Engineering decisions worth flagging
+
+**Filter runs on the original message; PII masking happens after.**
+Discovered in production: spaCy mis-classified the Turkish word "Siparişim" as a PERSON, the masker replaced it with `<PERSON_1>`, and the placeholder's all-caps letters tripped the shouting detector. Reordering the layers fixed the false positive without weakening either check.
+
+**Per-LLM cost tracking, not just trace.**
+Both `classifier.py` and `rag_pipeline.py` wrap their Anthropic calls with Langfuse `@observe(as_type="generation")` and report token usage. This makes per-message cost visible in real time and lets us tune confidence thresholds against actual spend, not estimates.
+
+**Confidence-based escalation at every stage.**
+A low-confidence answer is more dangerous than no answer. Each stage has its own threshold and escalation reason, so when a customer escalates we know *why* — not just that something went wrong.
+
+**Multilingual support is partial by design.**
+Cohere `embed-multilingual-v3` makes Turkish queries embeddable, but the knowledge base is English-only. The system correctly routes Turkish queries to a human via `low_confidence_rag` rather than hallucinating an English answer. Adding Turkish KB content is straightforward; auto-translating answers is not, and not done here.
+
+---
+
+## What this is not
+
+- Not a chat bot — it's a **stateless message processor** designed to slot behind a Zendesk webhook, web chat widget, WhatsApp Business API, or similar front-end
+- Not session-aware — no conversation memory; each request stands alone
+- Not finished — Sprint 6 (Zendesk webhook integration) and Sprint 7 (compliance audit log) are next
+
+---
+
+Built by [Burcu Tatlı](https://www.linkedin.com/in/burcutatli) · AI Operations & Automation
+Portfolio: [portfolioburcu.netlify.app](https://portfolioburcu.netlify.app)
+Related work: [clinical-safe-rag](https://github.com/burcutatli/clinical-safe-rag)
