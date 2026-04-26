@@ -162,15 +162,19 @@ def process_message(message: str) -> dict:
     
     logger.info(f"Processing message: {message[:80]}...")
     
-    # --- Step 0: PII masking ---
+    # --- Step 0: Escalation filter on ORIGINAL message ---
+    # Filter must see real customer tone (shouting, swearing) BEFORE PII masking.
+    # Otherwise placeholders like <PERSON_1> trigger false-positive all_caps_shouting.
+    # This bug was found in production with Turkish messages where spaCy NER
+    # mis-classified "Siparişim" as PERSON, then the placeholder fooled the filter.
+    should_escalate, reason, team = _escalation_filter.check(message)
+    
+    # --- Step 1: PII masking (only if not escalated) ---
     masking_result = _pii_masker.mask(message)
     masked_message = masking_result.masked_text
     pii_mapping = masking_result.mapping
     if pii_mapping:
         logger.info(f"PII masked: {len(pii_mapping)} entity(ies) replaced")
-    
-    # --- Step 1: Escalation keyword filter ---
-    should_escalate, reason, team = _escalation_filter.check(masked_message)
     if should_escalate:
         logger.info(f"Escalating via filter: {reason} → {team}")
         return {

@@ -93,11 +93,12 @@ class EscalationFilter:
         if len(message) <= 10:
             return False
         
-        letters = [c for c in message if c.isalpha()]
-        if not letters:
+        # Only count ASCII letters (avoids false positives on Turkish/non-Latin scripts)
+        ascii_letters = [c for c in message if c.isalpha() and c.isascii()]
+        if len(ascii_letters) < 5:
             return False
         
-        uppercase_ratio = sum(1 for c in letters if c.isupper()) / len(letters)
+        uppercase_ratio = sum(1 for c in ascii_letters if c.isupper()) / len(ascii_letters)
         return uppercase_ratio > 0.70
     
     @staticmethod
