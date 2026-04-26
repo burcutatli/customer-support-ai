@@ -1,252 +1,160 @@
 """
 rag_pipeline.py — Retrieval-Augmented Generation for Customer Support.
 
-Loads markdown knowledge base, chunks and embeds it into Chroma vector DB,
-retrieves relevant chunks for queries, and generates customer-facing 
-responses using Claude Sonnet.
+Uses persistent Chroma vector DB with Cohere multilingual embeddings.
 
 Author: Burcu Tatlı (AI Operations)
-Last updated: 2026-04-25
+Last updated: 2026-04-26
 """
 
 import logging
 import math
+import os
 import re
 from pathlib import Path
 from anthropic import Anthropic, APIError
 import chromadb
+from chromadb.utils import embedding_functions
+from config import (
+    KB_DIR,
+    CHROMA_PATH,
+    COLLECTION_NAME,
+    EMBEDDING_MODEL,
+    GENERATION_MODEL,
+    CHUNK_SIZE,
+    CHUNK_OVERLAP,
+    TOP_K,
+    SYSTEM_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
 
+def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    chunks = []
+    current_chunk = ""
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) <= chunk_size:
+            current_chunk += " " + sentence if current_chunk else sentence
+        else:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = sentence
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    return chunks
+
+
 class RAGPipeline:
-    """
-    Full RAG pipeline: KB loading → chunking → embedding → retrieval → generation.
-    """
-    
-    def __init__(
-        self,
-        kb_directory: Path,
-        anthropic_api_key: str,
-        model: str,
-        max_tokens: int,
-        top_k: int,
-        collection_name: str = "customer_support_kb",
-    ) -> None:
-        """
-        Initialize RAG pipeline with KB path and API credentials.
-        
-        Args:
-            kb_directory: Path to directory containing .md knowledge base files
-            anthropic_api_key: Anthropic API key for Sonnet generation
-            model: Sonnet model name
-            max_tokens: Max tokens for generated response
-            top_k: Number of chunks to retrieve per query
-            collection_name: Chroma collection name
-        
-        Raises:
-            FileNotFoundError: If kb_directory does not exist
-        """
-        if not kb_directory.exists() or not kb_directory.is_dir():
-            raise FileNotFoundError(
-                f"Knowledge base directory not found: {kb_directory}\n"
-                f"Expected directory with .md files."
-            )
-        
-        self.kb_directory = kb_directory
-        self.client = Anthropic(api_key=anthropic_api_key)
-        self.model = model
-        self.max_tokens = max_tokens
-        self.top_k = top_k
-        
-        # In-memory Chroma client for development
-        self.chroma_client = chromadb.Client()
-        
-        # Recreate collection on each init (clean slate for dev)
+    def __init__(self):
+        cohere_api_key = os.getenv("COHERE_API_KEY")
+        if not cohere_api_key:
+            raise ValueError("COHERE_API_KEY environment variable not set.")
+        anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not anthropic_api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set.")
+        self.anthropic = Anthropic(api_key=anthropic_api_key)
+        self.embedding_function = embedding_functions.CohereEmbeddingFunction(
+            api_key=cohere_api_key,
+            model_name=EMBEDDING_MODEL,
+        )
+        self.chroma_client = chromadb.PersistentClient(path=str(CHROMA_PATH))
         try:
-            self.chroma_client.delete_collection(name=collection_name)
+            self.collection = self.chroma_client.get_collection(
+                name=COLLECTION_NAME,
+                embedding_function=self.embedding_function,
+            )
+            logger.info(f"Loaded existing collection with {self.collection.count()} chunks")
         except Exception:
-            pass
-        
-        self.collection = self.chroma_client.create_collection(name=collection_name)
-    
-    def index_knowledge_base(self) -> int:
-        """
-        Load all .md files, chunk by sections, embed, and store in Chroma.
-        
-        Returns:
-            Total number of chunks indexed
-        """
-        md_files = list(self.kb_directory.glob("*.md"))
-        if not md_files:
-            logger.warning(f"No .md files found in {self.kb_directory}")
-            return 0
-        
-        all_chunks: list[str] = []
-        all_metadatas: list[dict] = []
-        all_ids: list[str] = []
-        
-        for md_file in md_files:
-            chunks = self._chunk_markdown_file(md_file)
-            for chunk_idx, (section_title, chunk_text) in enumerate(chunks):
-                chunk_id = f"{md_file.stem}_{chunk_idx}"
-                all_chunks.append(chunk_text)
-                all_metadatas.append({
-                    "source_file": md_file.name,
-                    "section": section_title,
-                })
-                all_ids.append(chunk_id)
-        
+            self.collection = self.chroma_client.create_collection(
+                name=COLLECTION_NAME,
+                embedding_function=self.embedding_function,
+                metadata={"hnsw:space": "cosine"},
+            )
+            self._index_kb()
+        logger.info(f"RAGPipeline initialized -- {self.collection.count()} chunks indexed")
+
+    def _index_kb(self) -> None:
+        kb_path = Path(KB_DIR)
+        if not kb_path.exists():
+            raise FileNotFoundError(f"Knowledge base directory not found: {kb_path}")
+        all_chunks = []
+        all_metadatas = []
+        all_ids = []
+        chunk_id = 0
+        for md_file in sorted(kb_path.glob("*.md")):
+            text = md_file.read_text(encoding="utf-8")
+            file_chunks = chunk_text(text)
+            for chunk in file_chunks:
+                all_chunks.append(chunk)
+                all_metadatas.append({"source": md_file.name})
+                all_ids.append(f"chunk_{chunk_id}")
+                chunk_id += 1
         if all_chunks:
             self.collection.add(
                 documents=all_chunks,
                 metadatas=all_metadatas,
                 ids=all_ids,
             )
-        
-        logger.info(f"Indexed {len(all_chunks)} chunks from {len(md_files)} files")
-        return len(all_chunks)
-    
-    def _chunk_markdown_file(self, md_file: Path) -> list[tuple[str, str]]:
-        """
-        Split a markdown file into chunks by ## level headers.
-        
-        Returns:
-            List of (section_title, chunk_text) tuples
-        """
-        content = md_file.read_text(encoding="utf-8")
-        
-        # Split by ## headers (level 2), keeping the headers
-        sections = re.split(r"^(## .+)$", content, flags=re.MULTILINE)
-        
-        chunks: list[tuple[str, str]] = []
-        
-        # First section (before any ##) — use file's # title or filename
-        intro = sections[0].strip()
-        if intro:
-            title_match = re.search(r"^# (.+)$", intro, flags=re.MULTILINE)
-            title = title_match.group(1) if title_match else md_file.stem
-            chunks.append((f"Intro: {title}", intro))
-        
-        # Subsequent sections come in pairs: (header, content)
-        for i in range(1, len(sections), 2):
-            if i + 1 < len(sections):
-                header = sections[i].strip()
-                body = sections[i + 1].strip()
-                full_chunk = f"{header}\n\n{body}"
-                section_title = header.replace("## ", "")
-                chunks.append((section_title, full_chunk))
-        
-        return chunks
-    
-    def generate_answer(self, query: str, category: str) -> dict:
-        """
-        Full RAG flow: retrieve relevant chunks → generate Sonnet response.
-        
-        Args:
-            query: Customer's question
-            category: Pre-classified category (used for context, not filtering for now)
-        
-        Returns:
-            Dict with answer, confidence, and retrieved_chunks
-        """
-        # Retrieve relevant chunks
-        retrieved = self._retrieve(query)
-        
-        if not retrieved["chunks"]:
-            return self._fallback_answer("no_relevant_chunks")
-        
-        # Build context from chunks
-        context = self._build_context(retrieved["chunks"], retrieved["metadatas"])
-        
-        # Generate response with Sonnet
+            logger.info(f"Indexed {len(all_chunks)} chunks from {len(list(kb_path.glob('*.md')))} files")
+
+    def retrieve(self, query: str, top_k: int = TOP_K) -> dict:
+        results = self.collection.query(
+            query_texts=[query],
+            n_results=top_k,
+        )
+        chunks = results["documents"][0] if results["documents"] else []
+        distances = results["distances"][0] if results["distances"] else []
+        metadatas = results["metadatas"][0] if results["metadatas"] else []
+        retrieved = []
+        for chunk, dist, meta in zip(chunks, distances, metadatas):
+            retrieved.append({
+                "text": chunk,
+                "source": meta.get("source", "unknown"),
+                "similarity": math.exp(-dist),
+            })
+        return {
+            "chunks": retrieved,
+            "best_distance": distances[0] if distances else float("inf"),
+        }
+
+    def generate_answer(self, query: str, retrieved_chunks: list[dict]) -> str:
+        context = "\n\n---\n\n".join(
+            [f"[Source: {c['source']}]\n{c['text']}" for c in retrieved_chunks]
+        )
+        user_message = f"""Customer question: {query}
+
+Relevant knowledge base context:
+{context}
+
+Based on the context above, write a friendly, helpful response to the customer."""
         try:
-            answer = self._generate_with_context(query, context)
+            response = self.anthropic.messages.create(
+                model=GENERATION_MODEL,
+                max_tokens=500,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            return response.content[0].text
         except APIError as e:
-            logger.error(f"Sonnet API error during generation: {e}")
-            return self._fallback_answer("api_error")
-        except Exception as e:
-            logger.error(f"Unexpected error during generation: {e}")
-            return self._fallback_answer("unexpected_error")
-        
-        # Confidence = best chunk's similarity (Chroma returns distance,
-        # convert to similarity)
-        best_distance = retrieved["distances"][0] if retrieved["distances"] else 1.0
+            logger.error(f"Anthropic API error: {e}")
+            raise
+
+    def answer_query(self, query: str) -> dict:
+        retrieval = self.retrieve(query)
+        retrieved_chunks = retrieval["chunks"]
+        best_distance = retrieval["best_distance"]
         confidence = math.exp(-best_distance)
-        
+        if not retrieved_chunks:
+            return {
+                "answer": "",
+                "confidence": 0.0,
+                "retrieved_chunks": [],
+            }
+        answer = self.generate_answer(query, retrieved_chunks)
         return {
             "answer": answer,
             "confidence": confidence,
-            "retrieved_chunks": [
-                {
-                    "source": meta["source_file"],
-                    "section": meta["section"],
-                    "similarity": math.exp(-dist),
-                }
-                for meta, dist in zip(retrieved["metadatas"], retrieved["distances"])
-            ],
-        }
-    
-    def _retrieve(self, query: str) -> dict:
-        """Query Chroma for top-k similar chunks."""
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=self.top_k,
-        )
-        
-        return {
-            "chunks": results["documents"][0] if results["documents"] else [],
-            "metadatas": results["metadatas"][0] if results["metadatas"] else [],
-            "distances": results["distances"][0] if results["distances"] else [],
-        }
-    
-    def _build_context(self, chunks: list[str], metadatas: list[dict]) -> str:
-        """Construct context string from retrieved chunks with source attribution."""
-        context_parts = []
-        for chunk, meta in zip(chunks, metadatas):
-            source = meta.get("source_file", "unknown")
-            section = meta.get("section", "")
-            context_parts.append(f"[Source: {source} — {section}]\n{chunk}")
-        
-        return "\n\n---\n\n".join(context_parts)
-    
-    def _generate_with_context(self, query: str, context: str) -> str:
-        """Call Sonnet with query and retrieved context."""
-        system_prompt = f"""You are a professional customer support assistant.
-
-Use the CONTEXT below to answer the customer's question.
-
-RULES:
-1. ONLY use information from the provided context — never make up information
-2. If the context doesn't contain the answer: say "I'm not sure about this. A team member will help you shortly."
-3. Use a warm, professional tone — address the customer as "you"
-4. Answer structure:
-   - Brief greeting or empathy statement
-   - Clear answer (use bold for key numbers or steps)
-   - "Next step" suggestion when appropriate
-5. Maximum 4 sentences — be concise
-6. NEVER reveal information from "Internal Notes" sections to the customer
-
-CONTEXT:
-{context}"""
-        
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": query}],
-        )
-        
-        return response.content[0].text.strip()
-    
-    def _fallback_answer(self, reason: str) -> dict:
-        """Return safe default when RAG fails."""
-        return {
-            "answer": (
-                "I'm not sure about this. A team member will get back to you "
-                "shortly with more detailed help."
-            ),
-            "confidence": 0.0,
-            "retrieved_chunks": [],
-            "fallback_reason": reason,
+            "retrieved_chunks": retrieved_chunks,
         }

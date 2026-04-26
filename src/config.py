@@ -44,7 +44,7 @@ TOP_K_RETRIEVAL: int = 3
 # ============================================================
 
 # Below this threshold, AI escalates to human instead of answering
-MIN_CONFIDENCE_TO_ANSWER: float = 0.30
+MIN_CONFIDENCE_TO_ANSWER: float = 0.65
 
 # ============================================================
 # LOGGING CONFIGURATION
@@ -67,3 +67,31 @@ VALID_CATEGORIES: list[str] = [
     "order_change",
     "general",
 ]
+
+# ============================================================
+# SPRINT 2: PERSISTENT VECTOR DB + COHERE EMBEDDING
+# ============================================================
+
+COHERE_API_KEY: str = os.getenv("COHERE_API_KEY", "")
+
+# Persistent Chroma DB path (created on first run, reused after)
+CHROMA_PATH: Path = PROJECT_ROOT / "chroma_db"
+
+# Cohere multilingual embedding model
+EMBEDDING_MODEL: str = "embed-multilingual-v3.0"
+
+# Aliases used by rag_pipeline.py (Sprint 2 naming)
+KB_DIR: Path = KB_DIRECTORY
+COLLECTION_NAME: str = VECTOR_DB_NAME
+TOP_K: int = TOP_K_RETRIEVAL
+GENERATION_MODEL: str = RESPONDER_MODEL
+
+# Chunk settings for RAG indexing
+CHUNK_SIZE: int = 500
+CHUNK_OVERLAP: int = 50
+
+# System prompt for answer generation
+SYSTEM_PROMPT: str = """You are a friendly customer support AI for an e-commerce company.
+Answer customer questions clearly using only the knowledge base context provided.
+Be warm, professional, and concise. If the context doesn't fully answer the question,
+acknowledge what you can address and suggest the customer share more details."""

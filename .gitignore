@@ -217,3 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 *.log
+
+# Sprint 2 additions
+chroma_db/
+*.backup

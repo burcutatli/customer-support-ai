@@ -108,17 +108,9 @@ def setup_pipeline() -> None:
     )
     logger.info("MessageClassifier initialized")
     
-    # Initialize RAG pipeline
-    _rag_pipeline = RAGPipeline(
-        kb_directory=KB_DIRECTORY,
-        anthropic_api_key=ANTHROPIC_API_KEY,
-        model=RESPONDER_MODEL,
-        max_tokens=RESPONDER_MAX_TOKENS,
-        top_k=TOP_K_RETRIEVAL,
-        collection_name=VECTOR_DB_NAME,
-    )
-    chunks_indexed = _rag_pipeline.index_knowledge_base()
-    logger.info(f"RAGPipeline initialized — {chunks_indexed} chunks indexed")
+    # Initialize RAG pipeline (config loaded internally from config.py)
+    _rag_pipeline = RAGPipeline()
+    logger.info("RAGPipeline initialized")
     
     logger.info("Pipeline setup complete")
 
@@ -188,10 +180,7 @@ def process_message(message: str) -> dict:
         }
     
     # --- Step 4: RAG generation ---
-    rag_result = _rag_pipeline.generate_answer(
-        query=message,
-        category=classification["category"],
-    )
+    rag_result = _rag_pipeline.answer_query(message)
     logger.info(f"RAG generated answer (confidence: {rag_result['confidence']:.2f})")
     
     # --- Step 5: Confidence check on RAG ---
