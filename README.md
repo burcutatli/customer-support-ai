@@ -136,3 +136,4 @@ Built as a portfolio piece during my transition into AI Operations.
 Built by [Burcu Tatlı](https://www.linkedin.com/in/burcutatli) · AI Operations & Automation  
 Portfolio: [portfolioburcu.netlify.app](https://portfolioburcu.netlify.app)  
 Related work: [clinical-safe-rag](https://github.com/burcutatli/clinical-safe-rag)
+
