@@ -38,6 +38,7 @@ from escalation_filter import EscalationFilter
 from classifier import MessageClassifier
 from rag_pipeline import RAGPipeline
 from pii_masker import PIIMasker, MaskingResult
+from langfuse import observe, get_client
 
 
 # ============================================================
@@ -119,6 +120,13 @@ def setup_pipeline() -> None:
     _pii_masker = PIIMasker()
     logger.info("PIIMasker initialized")
     
+    # Initialize Langfuse client (reads LANGFUSE_* env vars automatically)
+    langfuse = get_client()
+    if langfuse.auth_check():
+        logger.info("Langfuse client authenticated")
+    else:
+        logger.warning("Langfuse auth failed — traces will not be sent")
+    
     logger.info("Pipeline setup complete")
 
 
@@ -126,6 +134,7 @@ def setup_pipeline() -> None:
 # MAIN PIPELINE
 # ============================================================
 
+@observe(name="process_message")
 def process_message(message: str) -> dict:
     """
     Process a customer message through the full AI pipeline.
