@@ -1,9 +1,11 @@
 """api.py — REST API for Customer Support AI."""
 from dotenv import load_dotenv
-load_dotenv(dotenv_path="../.env")
+from pathlib import Path
+
+# Load .env from project root (one level up from src/)
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from fastapi import FastAPI, HTTPException
@@ -14,7 +16,7 @@ from main import setup_pipeline, process_message
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Customer Support AI", version="1.0.0")
+app = FastAPI(title="Customer Support AI", version="1.1.0")
 
 
 @app.on_event("startup")
@@ -34,6 +36,8 @@ class MessageResponse(BaseModel):
     category: str | None = None
     reason: str | None = None
     destination_team: str | None = None
+    ticket_id: int | None = None
+    ticket_created: bool | None = None
 
 
 @app.post("/api/process", response_model=MessageResponse)
@@ -48,6 +52,8 @@ def process_endpoint(request: MessageRequest):
             category=result.get("category"),
             reason=result.get("reason"),
             destination_team=result.get("destination_team"),
+            ticket_id=result.get("ticket_id"),
+            ticket_created=result.get("ticket_created"),
         )
     except Exception as e:
         logger.error(f"Pipeline error: {e}")
@@ -61,7 +67,7 @@ def health_check():
 
 @app.get("/")
 def root():
-    return {"service": "Customer Support AI", "version": "1.0.0", "docs": "/docs"}
+    return {"service": "Customer Support AI", "version": "1.1.0", "docs": "/docs"}
 
 
 if __name__ == "__main__":
