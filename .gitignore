@@ -221,3 +221,6 @@ __marimo__/
 # Sprint 2 additions
 chroma_db/
 *.backup
+
+# Sprint 7 - Audit log runtime data
+logs/audit.jsonl
