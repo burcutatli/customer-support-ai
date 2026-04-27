@@ -5,6 +5,7 @@ This is the entry point for the AI pipeline. It wires together:
 - EscalationFilter (keyword + behavioral filter)
 - MessageClassifier (Haiku-based categorization)
 - RAGPipeline (KB retrieval + Sonnet generation)
+- ZendeskClient (creates support tickets when escalating)
 
 Usage:
     from main import setup_pipeline, process_message
@@ -13,11 +14,12 @@ Usage:
     result = process_message("When will my order arrive?")
 
 Author: Burcu Tatlı (AI Operations)
-Last updated: 2026-04-25
+Last updated: 2026-04-27
 """
 
 import logging
 import sys
+from typing import Optional
 
 from config import (
     ANTHROPIC_API_KEY,
@@ -38,6 +40,7 @@ from escalation_filter import EscalationFilter
 from classifier import MessageClassifier
 from rag_pipeline import RAGPipeline
 from pii_masker import PIIMasker, MaskingResult
+from zendesk_client import ZendeskClient, TicketResult
 from langfuse import observe, get_client
 
 
@@ -52,11 +55,25 @@ ESCALATION_RESPONSE_TEMPLATE = (
     "details to speed up the process, please feel free to do so."
 )
 
+# Map escalation reasons to Zendesk ticket priorities
+ESCALATION_PRIORITY_MAP = {
+    "refund_keyword": "high",
+    "complaint_keyword": "high",
+    "human_request_keyword": "normal",
+    "billing_keyword": "normal",
+    "technical_keyword": "normal",
+    "all_caps_shouting": "high",
+    "multiple_exclamations": "normal",
+    "low_confidence_classification": "normal",
+    "low_confidence_rag": "normal",
+}
+
 # Module-level component holders
 _escalation_filter: EscalationFilter | None = None
 _classifier: MessageClassifier | None = None
 _rag_pipeline: RAGPipeline | None = None
 _pii_masker: PIIMasker | None = None
+_zendesk_client: ZendeskClient | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +90,7 @@ def setup_pipeline() -> None:
         ValueError: If ANTHROPIC_API_KEY is missing
         FileNotFoundError: If escalation keywords or KB directory missing
     """
-    global _escalation_filter, _classifier, _rag_pipeline
+    global _escalation_filter, _classifier, _rag_pipeline, _zendesk_client
     
     # Validate API key
     if not ANTHROPIC_API_KEY:
@@ -120,6 +137,20 @@ def setup_pipeline() -> None:
     _pii_masker = PIIMasker()
     logger.info("PIIMasker initialized")
     
+    # Initialize Zendesk client (Sprint 6).
+    # Graceful degradation: if credentials are missing, we log a warning
+    # and continue. The pipeline will still work — it just won't create
+    # Zendesk tickets on escalation.
+    try:
+        _zendesk_client = ZendeskClient()
+        logger.info("ZendeskClient initialized")
+    except ValueError as e:
+        logger.warning(
+            f"ZendeskClient NOT initialized — {e}. "
+            f"Pipeline will run, but escalations will not create tickets."
+        )
+        _zendesk_client = None
+    
     # Initialize Langfuse client (reads LANGFUSE_* env vars automatically)
     langfuse = get_client()
     if langfuse.auth_check():
@@ -128,6 +159,80 @@ def setup_pipeline() -> None:
         logger.warning("Langfuse auth failed — traces will not be sent")
     
     logger.info("Pipeline setup complete")
+
+
+# ============================================================
+# ZENDESK ESCALATION HELPER
+# ============================================================
+
+def _create_zendesk_ticket(
+    customer_message: str,
+    reason: str,
+    destination_team: str,
+    classification: Optional[dict] = None,
+    rag_result: Optional[dict] = None,
+) -> TicketResult:
+    """
+    Create a Zendesk ticket for an escalated message.
+    
+    This wraps ZendeskClient.create_ticket with rich context: the original
+    message, why we escalated, classification confidence (if available),
+    and RAG output (if available). Useful for human agents triaging.
+    
+    Returns a TicketResult even if Zendesk client is missing (returns
+    a dummy "skipped" TicketResult so callers don't have to handle None).
+    """
+    if _zendesk_client is None:
+        logger.info("Zendesk client unavailable — skipping ticket creation")
+        return TicketResult(
+            success=False,
+            error_message="Zendesk client not configured",
+        )
+    
+    # Build a descriptive subject (truncate long messages)
+    short_msg = customer_message[:60] + ("..." if len(customer_message) > 60 else "")
+    subject = f"[AI escalation] {short_msg}"
+    
+    # Build a rich description for the human agent
+    description_parts = [
+        f"Original customer message:\n{customer_message}",
+        f"\nEscalation reason: {reason}",
+        f"Suggested team: {destination_team}",
+    ]
+    
+    if classification:
+        description_parts.append(
+            f"\nClassifier output:\n"
+            f"  - Category: {classification.get('category', 'N/A')}\n"
+            f"  - Confidence: {classification.get('confidence', 0):.2f}"
+        )
+    
+    if rag_result:
+        description_parts.append(
+            f"\nRAG attempt:\n"
+            f"  - Answer drafted (low confidence): "
+            f"{rag_result.get('answer', '')[:200]}\n"
+            f"  - RAG confidence: {rag_result.get('confidence', 0):.2f}"
+        )
+    
+    description = "\n".join(description_parts)
+    
+    # Pick priority from map (default normal)
+    priority = ESCALATION_PRIORITY_MAP.get(reason, "normal")
+    
+    # Tags help with Zendesk filtering / reporting
+    tags = [
+        "ai_escalation",
+        f"reason_{reason}",
+        f"team_{destination_team}",
+    ]
+    
+    return _zendesk_client.create_ticket(
+        subject=subject,
+        description=description,
+        priority=priority,
+        tags=tags,
+    )
 
 
 # ============================================================
@@ -147,6 +252,8 @@ def process_message(message: str) -> dict:
         5. Confidence check on RAG output
         6. Return action + response
     
+    On any escalation, also creates a Zendesk ticket with full context.
+    
     Args:
         message: Raw customer message text
     
@@ -155,6 +262,7 @@ def process_message(message: str) -> dict:
         - action: "answer" or "escalate"
         - response_to_customer: text to send to customer
         - reason: reason for escalation (if applicable)
+        - ticket_id: Zendesk ticket ID (if escalated and Zendesk available)
         - metadata: detailed pipeline info for logging
     """
     if _escalation_filter is None or _classifier is None or _rag_pipeline is None or _pii_masker is None:
@@ -175,13 +283,21 @@ def process_message(message: str) -> dict:
     pii_mapping = masking_result.mapping
     if pii_mapping:
         logger.info(f"PII masked: {len(pii_mapping)} entity(ies) replaced")
+    
     if should_escalate:
         logger.info(f"Escalating via filter: {reason} → {team}")
+        ticket = _create_zendesk_ticket(
+            customer_message=message,
+            reason=reason,
+            destination_team=team,
+        )
         return {
             "action": "escalate",
             "reason": reason,
             "destination_team": team,
             "response_to_customer": ESCALATION_RESPONSE_TEMPLATE,
+            "ticket_id": ticket.ticket_id,
+            "ticket_created": ticket.success,
             "metadata": {"stage": "escalation_filter"},
         }
     
@@ -195,11 +311,19 @@ def process_message(message: str) -> dict:
     # --- Step 3: Confidence check on classification ---
     if classification["confidence"] < MIN_CONFIDENCE_TO_ANSWER:
         logger.info("Escalating: low classification confidence")
+        ticket = _create_zendesk_ticket(
+            customer_message=message,
+            reason="low_confidence_classification",
+            destination_team="support_general",
+            classification=classification,
+        )
         return {
             "action": "escalate",
             "reason": "low_confidence_classification",
             "destination_team": "support_general",
             "response_to_customer": ESCALATION_RESPONSE_TEMPLATE,
+            "ticket_id": ticket.ticket_id,
+            "ticket_created": ticket.success,
             "metadata": {
                 "stage": "classifier",
                 "classification": classification,
@@ -213,11 +337,20 @@ def process_message(message: str) -> dict:
     # --- Step 5: Confidence check on RAG ---
     if rag_result["confidence"] < MIN_CONFIDENCE_TO_ANSWER:
         logger.info("Escalating: low RAG confidence")
+        ticket = _create_zendesk_ticket(
+            customer_message=message,
+            reason="low_confidence_rag",
+            destination_team="support_general",
+            classification=classification,
+            rag_result=rag_result,
+        )
         return {
             "action": "escalate",
             "reason": "low_confidence_rag",
             "destination_team": "support_general",
             "response_to_customer": ESCALATION_RESPONSE_TEMPLATE,
+            "ticket_id": ticket.ticket_id,
+            "ticket_created": ticket.success,
             "metadata": {
                 "stage": "rag",
                 "classification": classification,
@@ -253,6 +386,10 @@ def _print_result(message: str, result: dict) -> None:
     if result["action"] == "escalate":
         print(f"REASON:  {result['reason']}")
         print(f"ROUTE:   {result['destination_team']}")
+        if result.get("ticket_created"):
+            print(f"TICKET:  #{result['ticket_id']} ✅ created in Zendesk")
+        else:
+            print(f"TICKET:  ❌ not created (check Zendesk config)")
     else:
         print(f"CATEGORY: {result.get('category', 'N/A')}")
     
